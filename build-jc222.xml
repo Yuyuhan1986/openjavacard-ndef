@@ -8,7 +8,7 @@
     <property name="ext.ant-javacard" value="ext/ant-javacard"/>
 
     <property name="sdk.globalplatform" value="ext/globalplatform-exports"/>
-    <property name="sdk.jc304" value="ext/javacard-sdks/jc304_kit"/>
+    <property name="sdk.jc222" value="ext/javacard-sdks/jc222_kit"/>
 
     <!-- Cleanup target -->
     <target name="clean" description="Delete build output">
@@ -51,7 +51,7 @@
     </target>
 
     <target name="build-advanced">
-        <javacard jckit="${sdk.jc304}">
+        <javacard jckit="${sdk.jc222}">
             <cap output="build/javacard/openjavacard-ndef-advanced.cap"
                  jar="build/javacard/openjavacard-ndef-advanced.jar"
                  classes="build/classes/advanced"
@@ -67,7 +67,7 @@
     </target>
 
     <target name="build-full">
-        <javacard jckit="${sdk.jc304}">
+        <javacard jckit="${sdk.jc222}">
             <cap output="build/javacard/openjavacard-ndef-full.cap"
                  jar="build/javacard/openjavacard-ndef-full.jar"
                  classes="build/classes/full"
@@ -81,7 +81,7 @@
     </target>
 
     <target name="build-tiny">
-        <javacard jckit="${sdk.jc304}">
+        <javacard jckit="${sdk.jc222}">
             <cap output="build/javacard/openjavacard-ndef-tiny.cap"
                  jar="build/javacard/openjavacard-ndef-tiny.jar"
                  classes="build/classes/tiny"
@@ -95,7 +95,7 @@
     </target>
 
     <target name="build-stub">
-        <javacard jckit="${sdk.jc304}">
+        <javacard jckit="${sdk.jc222}">
             <cap output="build/javacard/openjavacard-ndef-stub.cap"
                  jar="build/javacard/openjavacard-ndef-stub.jar"
                  classes="build/classes/stub"
