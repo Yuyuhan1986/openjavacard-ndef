@@ -18,11 +18,13 @@
  */
 package org.openjavacard.ndef.tmc;
 
+import javacard.framework.AID;
 import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
+import javacard.framework.Shareable;
 import javacard.framework.Util;
 import javacard.security.AESKey;
 import javacard.security.KeyBuilder;
@@ -103,6 +105,10 @@ public final class NdefApplet extends Applet {
     private static final short TAG_ENC_LOC    = (short) 0x0047;
     private static final short TAG_MAC_OFF    = (short) 0x0048;
     private static final short TAG_MAC_LOC    = (short) 0x0049;
+    private static final short TAG_APPDATA_AID = (short) 0x004A;
+    private static final short TAG_APPDATA_SIO = (short) 0x004B;
+    private static final short TAG_APPDATA_LOC = (short) 0x004C;
+    private static final short TAG_APPDATA_LEN = (short) 0x004D;
 
     /* ---- NDEF CC ---- */
     private static final byte NDEF_MAPPING_VERSION = (byte) 0x20;
@@ -126,6 +132,7 @@ public final class NdefApplet extends Applet {
     private static final byte  AUTH_CODE_LEN   = 5;
     private static final byte  RANDOM_LEN      = 8;
     private static final byte  DYN_ENC_LEN     = 16;
+    private static final short APPDATA_MAX_RAW_LEN = 64;
 
     /* ---- Install parameter tags ---- */
     private static final byte AD_TAG_NDEF_DATA_INITIAL = (byte) 0x80;
@@ -628,7 +635,7 @@ public final class NdefApplet extends Applet {
                    persistent[PERSIST_LIFECYCLE] == LIFECYCLE_NORMAL &&
                    (off >= 2 || le > 2)) {
             /* Dynamic NDEF processing for data portion */
-            ndefReadDynamic(apdu, buf, file, off, le);
+                ndefReadDynamic(apdu, buf, file, off, le);
         } else {
             apdu.setOutgoingLength(le);
             apdu.sendBytesLong(file, off, le);
@@ -812,7 +819,7 @@ public final class NdefApplet extends Applet {
             invalidateDynamicNdef();
         }
         if (!isDynamicNdefValid()) {
-            buildDynamicNdef(file, dataLen, fullLen);
+            buildDynamicNdef(file, dataLen, fullLen, buf);
         }
 
         if (reqOff >= fullLen) {
@@ -829,7 +836,7 @@ public final class NdefApplet extends Applet {
         apdu.sendBytesLong(dynamicNdefFile, reqOff, outLen);
     }
 
-    private void buildDynamicNdef(byte[] file, short dataLen, short fullLen) {
+    private void buildDynamicNdef(byte[] file, short dataLen, short fullLen, byte[] scratch) {
         Util.arrayCopyNonAtomic(file, (short) 0, dynamicNdefFile, (short) 0, fullLen);
 
         /* Parse config */
@@ -869,6 +876,13 @@ public final class NdefApplet extends Applet {
                     hexEncode(raw, (short) 0, rawLen, dynamicNdefFile, userOff);
                 }
             }
+            /*
+             * Optional external applet data. The target applet must expose a
+             * TmcDataSource Shareable interface; direct APDU reads across the
+             * JavaCard firewall are not possible.
+             */
+            updateAppDataFromShareable(scratch, fullLen);
+
             /* Dynamic ciphertext: COUNTER+AUTH_CODE+RANDOM -> CBC encrypt */
             if (encLoc >= 0 && readk != null &&
                     isRangeInFile(encLoc, (short) (DYN_ENC_LEN * 2), fullLen)) {
@@ -911,6 +925,42 @@ public final class NdefApplet extends Applet {
         if (off < 0 || len < 0 || fullLen < 0) return false;
         if (off > fullLen) return false;
         return len <= (short) (fullLen - off);
+    }
+
+    private void updateAppDataFromShareable(byte[] scratch, short fullLen) {
+        short appDataLoc = configGetShort(TAG_APPDATA_LOC, (short) -1);
+        short appDataHexLen = configGetShort(TAG_APPDATA_LEN, (short) 0);
+        if (appDataLoc < 0 || appDataHexLen <= 0 || (appDataHexLen & 1) != 0)
+            return;
+        if (!isRangeInFile(appDataLoc, appDataHexLen, fullLen))
+            return;
+
+        Util.arrayFillNonAtomic(dynamicNdefFile, appDataLoc, appDataHexLen, (byte) '0');
+
+        short aidOff = configFindValue(TAG_APPDATA_AID);
+        short aidLen = configGetValueLength(TAG_APPDATA_AID);
+        if (aidOff < 0 || aidLen < 5 || aidLen > 16)
+            return;
+
+        byte serviceId = (byte) configGetShort(TAG_APPDATA_SIO, (short) 0);
+        short maxRawLen = (short) (appDataHexLen / 2);
+        if (maxRawLen > APPDATA_MAX_RAW_LEN) maxRawLen = APPDATA_MAX_RAW_LEN;
+        if (maxRawLen > scratch.length) maxRawLen = (short) scratch.length;
+
+        try {
+            AID aid = JCSystem.lookupAID(configFile, aidOff, (byte) aidLen);
+            if (aid == null) return;
+
+            Shareable share = JCSystem.getAppletShareableInterfaceObject(aid, serviceId);
+            if (!(share instanceof TmcDataSource)) return;
+
+            short got = ((TmcDataSource) share).getTmcData(scratch, (short) 0, maxRawLen);
+            if (got < 0) got = 0;
+            if (got > maxRawLen) got = maxRawLen;
+            hexEncode(scratch, (short) 0, got, dynamicNdefFile, appDataLoc);
+        } catch (Exception e) {
+            /* Keep the zero-filled URL field if the external source is absent. */
+        }
     }
 
     /* ================================================================
@@ -1030,6 +1080,38 @@ public final class NdefApplet extends Applet {
             pos = (short) (pos + 3 + (vl & 0xFF));
         }
         return fallback;
+    }
+
+    private short configFindValue(short tag) {
+        if (configFile == null) return (short) -1;
+        byte[] cf = configFile;
+        short pos = 0;
+        while ((short) (pos + 3) <= cf.length) {
+            short t = Util.getShort(cf, pos);
+            short vl = (short) (cf[(short) (pos + 2)] & 0x00FF);
+            short valueOff = (short) (pos + 3);
+            short next = (short) (valueOff + vl);
+            if (next < valueOff || next > cf.length) return (short) -1;
+            if (t == tag) return valueOff;
+            pos = next;
+        }
+        return (short) -1;
+    }
+
+    private short configGetValueLength(short tag) {
+        if (configFile == null) return (short) -1;
+        byte[] cf = configFile;
+        short pos = 0;
+        while ((short) (pos + 3) <= cf.length) {
+            short t = Util.getShort(cf, pos);
+            short vl = (short) (cf[(short) (pos + 2)] & 0x00FF);
+            short valueOff = (short) (pos + 3);
+            short next = (short) (valueOff + vl);
+            if (next < valueOff || next > cf.length) return (short) -1;
+            if (t == tag) return vl;
+            pos = next;
+        }
+        return (short) -1;
     }
 
     private byte[] configGetBytes(short tag, byte expectedLen) {

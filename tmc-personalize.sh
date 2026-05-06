@@ -16,6 +16,9 @@ DEFAULT_AUTH="1122334455"
 DEFAULT_FILE_SIZE_HEX="0300"
 DEFAULT_USER_HEX="00000000000000000000000000000000"
 DEFAULT_URL_TEMPLATE="https://example.com/V01/00/__KEYID__/__SN__?e=__ENC__&d=__USER__&c=__MAC__"
+DEFAULT_APPDATA_AID=""
+DEFAULT_APPDATA_SIO="00"
+DEFAULT_APPDATA_HEX_LEN="0"
 DEFAULT_MODE="full"
 
 READER="$DEFAULT_READER"
@@ -29,6 +32,9 @@ AUTH_HEX="$DEFAULT_AUTH"
 FILE_SIZE_HEX="$DEFAULT_FILE_SIZE_HEX"
 USER_HEX="$DEFAULT_USER_HEX"
 URL_TEMPLATE="$DEFAULT_URL_TEMPLATE"
+APPDATA_AID="$DEFAULT_APPDATA_AID"
+APPDATA_SIO="$DEFAULT_APPDATA_SIO"
+APPDATA_HEX_LEN="$DEFAULT_APPDATA_HEX_LEN"
 PROFILE_PATH=""
 SAVE_PROFILE=""
 MODE="$DEFAULT_MODE"
@@ -48,6 +54,7 @@ USER_LOC=""
 USER_HEX_LEN=""
 ENC_LOC=""
 MAC_LOC=""
+APPDATA_LOC=""
 CONFIG_HEX=""
 CONFIG_BYTES=""
 APDU_FILE=""
@@ -82,6 +89,9 @@ Overrides:
   --file-size HEX
   --user-hex HEX
   --url-template TEXT
+  --appdata-aid HEX       Optional target applet AID for __APPDATA__
+  --appdata-sio HEX       Optional Shareable interface parameter, default 00
+  --appdata-hex-len N     Reserved __APPDATA__ hex chars, even number
 EOF
 }
 
@@ -124,6 +134,9 @@ load_profile() {
   FILE_SIZE_HEX="${FILE_SIZE_HEX:-$DEFAULT_FILE_SIZE_HEX}"
   USER_HEX="${USER_HEX:-$DEFAULT_USER_HEX}"
   URL_TEMPLATE="${URL_TEMPLATE:-$DEFAULT_URL_TEMPLATE}"
+  APPDATA_AID="${APPDATA_AID:-$DEFAULT_APPDATA_AID}"
+  APPDATA_SIO="${APPDATA_SIO:-$DEFAULT_APPDATA_SIO}"
+  APPDATA_HEX_LEN="${APPDATA_HEX_LEN:-$DEFAULT_APPDATA_HEX_LEN}"
   if [ "$MODE_FROM_ARGS" -eq 0 ]; then
     MODE="${MODE:-$DEFAULT_MODE}"
   else
@@ -145,6 +158,9 @@ AUTH_HEX='$AUTH_HEX'
 FILE_SIZE_HEX='$FILE_SIZE_HEX'
 USER_HEX='$USER_HEX'
 URL_TEMPLATE='$URL_TEMPLATE'
+APPDATA_AID='$APPDATA_AID'
+APPDATA_SIO='$APPDATA_SIO'
+APPDATA_HEX_LEN='$APPDATA_HEX_LEN'
 MODE='$MODE'
 EOF
 }
@@ -222,6 +238,18 @@ parse_args() {
         URL_TEMPLATE="${2:?missing value for --url-template}"
         shift 2
         ;;
+      --appdata-aid)
+        APPDATA_AID="${2:?missing value for --appdata-aid}"
+        shift 2
+        ;;
+      --appdata-sio)
+        APPDATA_SIO="${2:?missing value for --appdata-sio}"
+        shift 2
+        ;;
+      --appdata-hex-len)
+        APPDATA_HEX_LEN="${2:?missing value for --appdata-hex-len}"
+        shift 2
+        ;;
       *)
         echo "unknown option: $1" >&2
         usage >&2
@@ -242,6 +270,11 @@ interactive_collect() {
   AUTH_HEX="$(read_with_default "Auth code (5-byte hex)" "$AUTH_HEX")"
   FILE_SIZE_HEX="$(read_with_default "NDEF file size hex" "$FILE_SIZE_HEX")"
   USER_HEX="$(read_with_default "User plaintext field hex (must be 16-byte aligned)" "$USER_HEX")"
+  APPDATA_AID="$(read_with_default "Optional app-data source applet AID hex (blank disables)" "$APPDATA_AID")"
+  if [ -n "$APPDATA_AID" ]; then
+    APPDATA_SIO="$(read_with_default "App-data Shareable interface parameter hex" "$APPDATA_SIO")"
+    APPDATA_HEX_LEN="$(read_with_default "App-data URL field length in hex chars" "$APPDATA_HEX_LEN")"
+  fi
 
   echo
   echo "Dynamic URL template rules:"
@@ -249,6 +282,7 @@ interactive_collect() {
   echo "  use __SN__      for 20 hex chars"
   echo "  use __ENC__     for 32 hex chars"
   echo "  use __USER__    for your user plaintext hex"
+  echo "  use __APPDATA__ for applet-provided data hex when APPDATA_AID is set"
   echo "  use __MAC__     for 16 hex chars"
   echo
 
@@ -270,7 +304,7 @@ interactive_collect() {
 }
 
 compute_plan() {
-  PLAN_JSON="$(python3 - "$URL_TEMPLATE" "$USER_HEX" "$SN_HEX" "$AUTH_HEX" <<'PY'
+  PLAN_JSON="$(python3 - "$URL_TEMPLATE" "$USER_HEX" "$SN_HEX" "$AUTH_HEX" "$APPDATA_AID" "$APPDATA_SIO" "$APPDATA_HEX_LEN" <<'PY'
 import json
 import re
 import sys
@@ -279,6 +313,9 @@ template = sys.argv[1]
 user_hex = sys.argv[2].upper()
 sn_hex = sys.argv[3].upper()
 auth_hex = sys.argv[4].upper()
+appdata_aid = sys.argv[5].upper()
+appdata_sio = sys.argv[6].upper()
+appdata_hex_len_arg = sys.argv[7]
 
 replacements = {
     "__KEYID__": "FF",
@@ -294,10 +331,30 @@ for token in replacements:
     if template.count(token) != 1:
         raise SystemExit(f"token must appear exactly once: {token}")
 
+has_appdata = "__APPDATA__" in template
+if appdata_aid and not has_appdata:
+    raise SystemExit("__APPDATA__ token is required when APPDATA_AID is set")
+if has_appdata:
+    if template.count("__APPDATA__") != 1:
+        raise SystemExit("token must appear exactly once: __APPDATA__")
+    if not appdata_aid:
+        raise SystemExit("APPDATA_AID is required when template contains __APPDATA__")
+    try:
+        appdata_hex_len = int(appdata_hex_len_arg, 0)
+    except ValueError:
+        raise SystemExit("APPDATA_HEX_LEN must be a number")
+    if appdata_hex_len <= 0 or appdata_hex_len % 2:
+        raise SystemExit("APPDATA_HEX_LEN must be a positive even number")
+    if appdata_hex_len > 128:
+        raise SystemExit("APPDATA_HEX_LEN must be <= 128 hex chars")
+    replacements["__APPDATA__"] = "0" * appdata_hex_len
+else:
+    appdata_hex_len = 0
+
 parts = []
 offsets = {}
 cursor = 0
-for match in re.finditer(r"__KEYID__|__SN__|__ENC__|__USER__|__MAC__", template):
+for match in re.finditer(r"__KEYID__|__SN__|__ENC__|__USER__|__APPDATA__|__MAC__", template):
     literal = template[cursor:match.start()]
     parts.append(literal)
     rendered_len = sum(len(part) for part in parts)
@@ -327,6 +384,7 @@ sn_loc = url_base_offset + offsets["__SN__"]
 enc_loc = url_base_offset + offsets["__ENC__"]
 user_loc = url_base_offset + offsets["__USER__"]
 mac_loc = url_base_offset + offsets["__MAC__"]
+appdata_loc = url_base_offset + offsets["__APPDATA__"] if has_appdata else -1
 
 if len(user_hex) % 2:
     raise SystemExit("user hex must have even length")
@@ -336,6 +394,22 @@ if len(sn_hex) != 20:
     raise SystemExit("SN must be 10 bytes / 20 hex chars")
 if len(auth_hex) != 10:
     raise SystemExit("Auth code must be 5 bytes / 10 hex chars")
+if appdata_aid:
+    if len(appdata_aid) % 2:
+        raise SystemExit("APPDATA_AID must have even hex length")
+    aid_len = len(appdata_aid) // 2
+    if aid_len < 5 or aid_len > 16:
+        raise SystemExit("APPDATA_AID must be 5..16 bytes")
+    try:
+        bytes.fromhex(appdata_aid)
+    except ValueError:
+        raise SystemExit("APPDATA_AID must be hex")
+    if len(appdata_sio) != 2:
+        raise SystemExit("APPDATA_SIO must be one byte / 2 hex chars")
+    try:
+        bytes.fromhex(appdata_sio)
+    except ValueError:
+        raise SystemExit("APPDATA_SIO must be hex")
 
 entries = [
     (0x0040, bytes.fromhex("00")),
@@ -349,6 +423,13 @@ entries = [
     (0x0048, (0).to_bytes(2, "big")),
     (0x0049, mac_loc.to_bytes(2, "big")),
 ]
+if has_appdata:
+    entries.extend([
+        (0x004A, bytes.fromhex(appdata_aid)),
+        (0x004B, bytes.fromhex(appdata_sio)),
+        (0x004C, appdata_loc.to_bytes(2, "big")),
+        (0x004D, appdata_hex_len.to_bytes(2, "big")),
+    ])
 
 config = bytearray()
 for tag, value in entries:
@@ -369,6 +450,8 @@ print(json.dumps({
     "user_hex_len": len(user_hex),
     "enc_loc": enc_loc,
     "mac_loc": mac_loc,
+    "appdata_loc": appdata_loc,
+    "appdata_hex_len": appdata_hex_len,
     "config_hex": config.hex().upper(),
     "config_bytes": len(config),
 }))
@@ -385,6 +468,7 @@ for key in [
     "url", "ndef_hex", "ndef_bytes", "nlen", "record_mode", "url_base_offset",
     "key_loc", "sn_loc",
     "user_loc", "user_hex_len", "enc_loc", "mac_loc",
+    "appdata_loc", "appdata_hex_len",
     "config_hex", "config_bytes"
 ]:
     print(f"{key.upper()}={shlex.quote(str(data[key]))}")
@@ -409,6 +493,12 @@ print_plan() {
   echo "  USER hex length: $USER_HEX_LEN"
   echo "  ENC offset: $ENC_LOC"
   echo "  MAC offset: $MAC_LOC"
+  if [ "${APPDATA_LOC:-"-1"}" != "-1" ]; then
+    echo "  APPDATA offset: $APPDATA_LOC"
+    echo "  APPDATA hex length: $APPDATA_HEX_LEN"
+    echo "  APPDATA source AID: $APPDATA_AID"
+    echo "  APPDATA SIO parameter: $APPDATA_SIO"
+  fi
   echo "  Config bytes: $CONFIG_BYTES"
   echo
 }

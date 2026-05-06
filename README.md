@@ -54,6 +54,12 @@ Docker group access is configured, remove `sudo`. See the
 [TMC Personalization Guide](doc/tmc-personalization.md) for the interactive flow
 and readback verification commands.
 
+The TMC variant also supports an optional local URL extension: a template field
+`__APPDATA__` can be backed by another applet through the
+`org.openjavacard.ndef.tmc.TmcDataSource` Shareable interface. Configure it with
+`APPDATA_AID`, `APPDATA_SIO`, and `APPDATA_HEX_LEN`; direct cross-applet APDU
+reads are not supported by JavaCard.
+
 ### Features
 
  * Decent code quality

@@ -28,12 +28,13 @@
         <mkdir dir="build/classes/stub"/>
         <mkdir dir="build/classes/tiny"/>
         <mkdir dir="build/classes/tmc"/>
+        <mkdir dir="build/classes/tmc-provider"/>
     </target>
 
     <!-- Build-all target -->
     <target name="build"
             description="Build everything"
-            depends="prepare,build-advanced,build-full,build-tiny,build-stub,build-tmc"/>
+            depends="prepare,build-advanced,build-full,build-tiny,build-stub,build-tmc,build-tmc-provider"/>
 
 	<!-- Dummy test target -->
 	<target name="test" description="Run tests" depends="build"/>
@@ -110,12 +111,31 @@
         <javacard jckit="${sdk.jc222}">
             <cap output="build/javacard/openjavacard-ndef-tmc.cap"
                  jar="build/javacard/openjavacard-ndef-tmc.jar"
+                 export="build/javacard/exports"
+                 jca="build/javacard/openjavacard-ndef-tmc.jca"
                  classes="build/classes/tmc"
                  sources="applet-tmc/src/main/java"
                  aid="D2760000850101"
                  version="0.0">
                 <applet aid="D276000085010101"
                         class="org.openjavacard.ndef.tmc.NdefApplet"/>
+            </cap>
+        </javacard>
+    </target>
+
+    <target name="build-tmc-provider" depends="build-tmc">
+        <javacard jckit="${sdk.jc222}">
+            <cap output="build/javacard/openjavacard-ndef-tmc-provider.cap"
+                 jar="build/javacard/openjavacard-ndef-tmc-provider.jar"
+                 jca="build/javacard/openjavacard-ndef-tmc-provider.jca"
+                 classes="build/classes/tmc-provider"
+                 sources="applet-tmc-provider/src/main/java"
+                 aid="D2760000850201"
+                 version="0.0">
+                <applet aid="D276000085020101"
+                        class="org.openjavacard.ndef.tmcprovider.TmcShareProviderApplet"/>
+                <import jar="build/javacard/openjavacard-ndef-tmc.jar"
+                        exps="build/javacard/exports"/>
             </cap>
         </javacard>
     </target>

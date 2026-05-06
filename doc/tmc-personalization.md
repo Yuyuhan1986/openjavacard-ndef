@@ -78,6 +78,31 @@ Template tokens expected by the wizard:
 - `__USER__`
 - `__MAC__`
 
+Optional applet-data URL extension:
+
+- Add `__APPDATA__` to the URL template to reserve a fixed hex field for data
+  read from another applet.
+- Set `APPDATA_AID` / `--appdata-aid` to the target applet instance AID.
+- Set `APPDATA_SIO` / `--appdata-sio` to the Shareable interface parameter
+  passed to `JCSystem.getAppletShareableInterfaceObject`; default is `00`.
+- Set `APPDATA_HEX_LEN` / `--appdata-hex-len` to the number of hex characters
+  reserved in the URL. The value must be even and no more than 128.
+
+The target applet cannot be read directly with cross-applet APDUs. It must
+expose `org.openjavacard.ndef.tmc.TmcDataSource` as a JavaCard Shareable
+interface and return bytes from `getTmcData(...)`. The TMC applet hex-encodes
+those bytes into `__APPDATA__`. If the target applet is absent or does not
+provide the interface, the field remains zero-filled.
+
+Example profile fields:
+
+```bash
+URL_TEMPLATE='https://example.com/V01/00/__KEYID__/__SN__?e=__ENC__&a=__APPDATA__&d=__USER__&c=__MAC__'
+APPDATA_AID='A00000000101'
+APPDATA_SIO='00'
+APPDATA_HEX_LEN='32'
+```
+
 Install the applet
 -------------------
 
@@ -174,6 +199,11 @@ Write config data (TLV format)
 # Tag 0x0047: Dynamic ciphertext location in NDEF file = 0x003C (2 bytes)
 # Tag 0x0048: MAC input data offset = 0x0000 (2 bytes)
 # Tag 0x0049: MAC location in NDEF file = 0x0082 (2 bytes)
+# Optional extension tags:
+# Tag 0x004A: App-data source applet AID (5..16 bytes)
+# Tag 0x004B: App-data Shareable interface parameter (1 byte)
+# Tag 0x004C: App-data location in NDEF file (2 bytes)
+# Tag 0x004D: App-data field length in hex chars (2 bytes, even, <= 128)
 
 apduf 80DA0000
 3C   # total length
