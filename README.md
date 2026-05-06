@@ -21,6 +21,7 @@ You can follow us on [Twitter](https://twitter.com/openjavacardorg) and chat wit
 * [Installation Guide](doc/install.md)
 * [Protocol Reference](doc/protocol.md)
 * [TMC Personalization Guide](doc/tmc-personalization.md)
+* [TMC-NDEF Customer Guide](doc/tmc-ndef-customer-guide.md)
 
 ### Variants
 
