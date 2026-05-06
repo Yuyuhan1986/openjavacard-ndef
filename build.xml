@@ -27,15 +27,13 @@
         <mkdir dir="build/classes/full"/>
         <mkdir dir="build/classes/stub"/>
         <mkdir dir="build/classes/tiny"/>
+        <mkdir dir="build/classes/tmc"/>
     </target>
 
     <!-- Build-all target -->
-    <target name="build" description="Build everything" depends="prepare">
-        <antcall target="build-advanced"/>
-        <antcall target="build-full"/>
-        <antcall target="build-tiny"/>
-        <antcall target="build-stub"/>
-    </target>
+    <target name="build"
+            description="Build everything"
+            depends="prepare,build-advanced,build-full,build-tiny,build-stub,build-tmc"/>
 
 	<!-- Dummy test target -->
 	<target name="test" description="Run tests" depends="build"/>
@@ -104,6 +102,20 @@
                  version="0.0">
                 <applet aid="D27600017710021102000101"
                         class="org.openjavacard.ndef.stub.NdefApplet"/>
+            </cap>
+        </javacard>
+    </target>
+
+    <target name="build-tmc" depends="prepare">
+        <javacard jckit="${sdk.jc222}">
+            <cap output="build/javacard/openjavacard-ndef-tmc.cap"
+                 jar="build/javacard/openjavacard-ndef-tmc.jar"
+                 classes="build/classes/tmc"
+                 sources="applet-tmc/src/main/java"
+                 aid="D2760000850101"
+                 version="0.0">
+                <applet aid="D276000085010101"
+                        class="org.openjavacard.ndef.tmc.NdefApplet"/>
             </cap>
         </javacard>
     </target>

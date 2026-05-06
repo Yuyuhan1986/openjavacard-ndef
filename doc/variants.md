@@ -1,6 +1,22 @@
 ## Variants
 
-#### Advanced variant
+#### TMC variant
+
+The TMC variant implements the UNIS TMC 4.0.0 T4T security specification,
+adding personalization lifecycle, SM4-based key management, and dynamic
+NDEF data generation with ciphertext and MAC.
+
+Features:
+- Lifecycle management (PERSONAL -> NORMAL)
+- KEY file for secure key storage
+- Configuration file with TLV format
+- Personalization commands (CREATE FILE, WRITE KEY, etc.)
+- Security commands (GET CHALLENGE, EXTERNAL AUTHENTICATE)
+- Dynamic NDEF read with AES/SM4 encryption and CBC-MAC
+- Compatible with standard NDEF Type 4 Tag readers
+
+Note: This variant uses AES-128 as a stand-in for SM4. Deploy on
+SM4-capable hardware (UNIS TMC chips) for production use.
 
 #### Full variant
 
