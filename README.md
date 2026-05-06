@@ -20,6 +20,7 @@ You can follow us on [Twitter](https://twitter.com/openjavacardorg) and chat wit
 * [Compatibility List](doc/compatibility.md)
 * [Installation Guide](doc/install.md)
 * [Protocol Reference](doc/protocol.md)
+* [TMC Personalization Guide](doc/tmc-personalization.md)
 
 ### Variants
 
@@ -29,6 +30,29 @@ You can follow us on [Twitter](https://twitter.com/openjavacardorg) and chat wit
 | tiny         | Tiny feature set (read-only, static content)   | Stable       |
 | advanced     | Full plus GlobalPlatform features              | Experiment   |
 | stub         | Stub backed by another service                 | Experiment   |
+| tmc          | TMC T4T with SM4 security (UNIS spec)         | Experiment   |
+
+### TMC Personalization
+
+The local TMC personalization script is intended to run through the
+`local/javacard-dev:latest` Docker image so GlobalPlatformPro (`gp`) is
+available and the container can access the host PC/SC socket:
+
+```bash
+cd /home/richard-qiu/openjavacard-ndef
+
+sudo docker run --rm \
+  --user root \
+  -v /run/pcscd:/run/pcscd \
+  -v "$PWD":/workspace \
+  local/javacard-dev:latest \
+  bash -lc 'cd /workspace && ./tmc-personalize.sh --profile /workspace/tmc-demo.profile --noninteractive'
+```
+
+Use `sudo docker` if the current user cannot access `/var/run/docker.sock`; if
+Docker group access is configured, remove `sudo`. See the
+[TMC Personalization Guide](doc/tmc-personalization.md) for the interactive flow
+and readback verification commands.
 
 ### Features
 
